@@ -1,13 +1,11 @@
 import socket
 import threading
 import sys
-import time
-from random import randint
 import os
+import time
 import pickle
 import filecmp
-import shutil
-SEPARATOR = "SEPARATOR"
+
 HEADER_SIZE = 10
 
 
@@ -18,9 +16,10 @@ class Server:
     '''
     Initializer for the Server class
     '''
+
     def __init__(self, folderPath):
         # create tempFolder for storage of all client's files to be synced
-        folderName = "TempFolder" # the folder name where the files will be stored
+        folderName = "TempFolder"  # the folder name where the files will be stored
         currentDirectory = os.getcwd()  # gets the path of where the program is in.
         tempPath = currentDirectory + "\\" + folderName
         try:
@@ -37,7 +36,7 @@ class Server:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # allows the socket to be reusable
         sock.bind(('0.0.0.0', 9000))
         sock.listen(1)  # listen for incoming connections and have a queue of 1
-        print("Server running...")
+        print("Server running.")
 
         while True:
             c, a = sock.accept()  # accept the connection and store connection info on c and address info on a
@@ -50,29 +49,16 @@ class Server:
             self.connections.append(c)  # add the new connection to the connection list
             self.peers.append(a[0])  # add the address of the new connection to the peers list
             print(str(a[0]) + ':' + str(a[1]), "connected.")
-            #self.send_peers()
+            # self.send_peer
 
     '''
-    Handles sending information from the server to the clients
+    Function used to recieve the client folder and place its contents
+    in a temporary folder
     '''
-    def handler(self, c, a):
-        while True:
-            data = c.recv(1024)
-            # send information received to all clients
-            for connection in self.connections:
-                connection.send(data)
-            # send the information of the client that just disconnected to all the clients
-            # and update and send the peers list to all the clients
-            if not data:
-                print(str(a[0]) + ':' + str(a[1]), "disconnected.")
-                # remove information from client/peers list
-                self.connections.remove(c)
-                self.peers.remove(a[0])
-                c.close()  # close connection
-                self.send_peers()  # send the peer list to the clients
-                break
 
     def receiveClientFolder(self, c, tempPath, syncPath):
+        print("Receiving folders...")
+        time.sleep(1)
         data = c.recv(1024)
         dataLength = int(data[:HEADER_SIZE])
         # if the data is less than the expected size, that means more data is still needed to be received
@@ -87,7 +73,7 @@ class Server:
         # send that client the server's folder
         if len(dataList) == 0:
             # self.sendFolder(folderPath)
-            print("folder empty bruh")
+            print("Folder has no contents.")
         else:
             for tempList in dataList:
                 # receivedFile = c.recv(1024).decode('utf-8')
@@ -98,63 +84,66 @@ class Server:
                 f = open(tempName, 'wb')  # create a temp file to write the bytes that the client is sending
                 f.write(tempList[2])  # write the file contents onto the temp file
         self.compareFolderFiles(c, tempPath, syncPath)
-        
+
     '''
-    This function will compare its files to what was sent
+    This function will compare the servers files to what was sent
     If we have a copy of a file name we always assume the server
     is right. We just take in file names that is not in the syncFolder
-    and add it to the syncFolder so we can send it back
+    and add it to the syncFolder so we can send it back.
     '''
+
     def compareFolderFiles(self, c, tempPath, syncPath):
-        #create a comparison object to have lists of both paths
+        print("Comparing Folders...")
+        # create a comparison object to have 2 seperate lists
+        # of each folder's file names
         comparison = filecmp.dircmp(tempPath, syncPath)
         tempFileNames = comparison.left_list
         syncFileNames = comparison.right_list
-        '''print(tempFileNames)
-        print(syncFileNames)'''
-        #for each file in the tempFolder
+        # for each file in the tempFolder
         for i in tempFileNames:
-            #if a file is not in the syncFolder
+            # if a file is not in the syncFolder
             if i not in syncFileNames:
-                #we are going to open the file and rewrite in the syncFolder
+                # we are going to open the file and rewrite in the syncFolder
                 with open(tempPath + "\\" + i, 'rb') as f:
                     data = f.read()
                     with open(syncPath + "\\" + i, 'wb') as f1:
                         f1.write(data)
 
+        # we then call to send the syncFolder
         self.sendSyncFolder(c, syncPath)
 
-                #os.system("copy "+tempPath+"\\"+i+" "+syncPath+"\\")
-                #os.rename((tempPath+"\\"+i), (syncPath+"\\"+i))
-
-                #or we use shutil to copy
-                #shutil.copy2((tempPath+"\\"+i), (syncPath+"\\"), follow_symlinks=False)
-                #add that file to the syncFolder
-
     '''
-    This function will now send back the syncFolder to the client
+    This function will now send back the syncFolder to the client as 
+    a list of list which will be converted into bytes before being sent
     '''
+
     def sendSyncFolder(self, c, syncPath):
+        print("Updating syncFolder...")
+        time.sleep(1)
+        # actual syncFolder
         syncFolder = os.listdir(syncPath)
-        dataList = [] #list containing lists of file info
+        dataList = []  # list containing lists of file info
         for file in syncFolder:
+            # temporary list to contain a file's details
             tempList = []
-            tempList.append(file) #tempList[0] = file name
-            fileSize = os.path.getsize(syncPath+"\\"+file)
-            tempList.append(fileSize) #tempList[1] = file size
-            with open(syncPath+"\\"+file, "rb") as f:
-                tempList.append(f.read(tempList[1])) #tempList[2] = file contents
+            tempList.append(file)  # tempList[0] = file name
+            fileSize = os.path.getsize(syncPath + "\\" + file)
+            tempList.append(fileSize)  # tempList[1] = file size
+            with open(syncPath + "\\" + file, "rb") as f:
+                tempList.append(f.read(tempList[1]))  # tempList[2] = file contents
             dataList.append(tempList)
+        # now the list of list will be converted into bytes
         pickledList = pickle.dumps(dataList)
+        # we add a header in front of the message and convert it to bytes
         msg = bytes(f'{len(pickledList):<{HEADER_SIZE}}', "utf-8") + pickledList
-        print("SERVER SENDING NEW FOLDER")
         c.send(msg)
-        #c.close()
-    
+        # c.close()
+
     '''
     Sends the peer list to other clients by sending a list of the currently connected clients'
     ip addresses.
     '''
+
     def send_peers(self):
         p = ""
         # create the string of information
@@ -166,10 +155,12 @@ class Server:
         for connection in self.connections:
             connection.send(b'\x11' + bytes(p, 'utf-8'))
 
+
 class Client:
     '''
     Initializer for the Client class
     '''
+
     def __init__(self, address, folderPath, folderContents):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # create Socket
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # flag for socket to be reused
@@ -188,15 +179,21 @@ class Client:
             else:
                 print(str(data, 'utf-8'))'''
 
-    # FIXME file sending will probably happen here
+    '''
+    This function will have client send over its folder contents as a 
+    list of lists that will be converted into bytes
+    '''
+
     def giveFolder(self, sock, folderPath, folderContents):
+        print("Sending folder...")
+        time.sleep(1)
         dataList = []
         for file in folderContents:
             tempList = []
             tempList.append(file)  # tempList[0] = file name
-            fileSize = os.path.getsize(folderPath+"\\"+file)
+            fileSize = os.path.getsize(folderPath + "\\" + file)
             tempList.append(fileSize)  # tempList[1] =  file size
-            with open(folderPath+"\\"+file, "rb") as f:
+            with open(folderPath + "\\" + file, "rb") as f:
                 tempList.append(f.read(tempList[1]))  # tempList[2] = file contents in bytes
             dataList.append(tempList)
         # FIXME self.getFolder(folderPath)
@@ -205,47 +202,55 @@ class Client:
         sock.send(msg)  # send the list
         self.getServerFolder(sock, folderPath)
 
-    def getServerFolder(self,sock, path):
+    '''
+    This function deletes the clients current sync folder
+    and recieves the Server's sync folder and writes it onto
+    client sync folder
+    '''
+
+    def getServerFolder(self, sock, path):
+        print("Overwriting syncFolder with new syncFolder.")
+        time.sleep(1)
         # first loop to remove all files in folder that was sent
         # to receieve the servers sync file
         for f in os.listdir(path):
             os.remove(os.path.join(path, f))
+
         data = sock.recv(1024)
         dataLength = int(data[:HEADER_SIZE])
+        # if data is less than expected size, that means there is more to recieve
         while (len(data) - HEADER_SIZE) < dataLength:
             msg = sock.recv(1024)
             data += msg
 
         dataList = pickle.loads(data[HEADER_SIZE:])
-        print("DATA RECEIVED,")
-        print(dataList)
+        # the list of lists that the server sent
+
         if len(dataList) == 0:
             print("Folder empty")
         else:
+            # for each file that was sent
             for tempList in dataList:
                 filename = tempList[0]
                 filesize = tempList[1]
                 tempName = os.path.join(path, filename)
                 f = open(tempName, 'wb')
                 f.write(tempList[2])
-        #close the connection
+        # close the connection
         # TODO write logic to take in each file
 
     '''
-    Sends a message to the server
-    '''
-    '''def sendMsg(self, sock):
-        # sends a user input message and is converted to utf-8
-        while True:
-            sock.send(bytes(input("Message: "), 'utf-8'))'''
-
-    '''
-    updates the peers list in the p2p class
+    Updates the peer list in the p2p class.
     '''
 
     def updatePeers(self, peerData):
         # updates the list of peers cno
         p2p.peers = str(peerData, "utf-8").split(",")[:-1]
+
+
+'''
+This class only contains a list of peers, if there are multiple clients
+'''
 
 
 class p2p:
@@ -256,6 +261,8 @@ class p2p:
 Creates a folder named "SyncFolder", which is a folder that contains the files that will be synced
 amongst the peers in the network. If the folder already exists, it won't make another.
 '''
+
+
 def findFolder(name):
     folderName = name  # the folder name where the files will be stored
     currentDirectory = os.getcwd()  # gets the path of where the program is in.
@@ -282,6 +289,8 @@ def findFolder(name):
 
 def main():
     while True:
+        # creates variables of the syncFolder path and contents
+        # to pass through when creating a server or client
         syncPath, syncContents = findFolder("SyncFolder")
         print("\n# System Info #\nSystem Name: %s\nIP Address: %s"
               % (socket.gethostname(), socket.gethostbyname(socket.gethostname())))
@@ -298,12 +307,16 @@ def main():
             except TimeoutError:
                 print("Connection timed out.")
             except OSError:
-                print("Requested address is not valid in its context.")
+                print("Requested address is not valid.")
 
             # become server if disconnected from client or unable to become client
             try:
+                print("Initializing server...")
+                time.sleep(1)
                 server = Server(syncPath)
             except KeyboardInterrupt:
                 sys.exit(0)
 
-main()
+
+if __name__ == '__main__':
+    main()
